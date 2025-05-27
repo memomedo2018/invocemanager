@@ -1,0 +1,554 @@
+import streamlit as st
+import datetime
+import os
+from invoice_generator import (
+    generate_invoice_text, 
+    get_next_invoice_number,
+    get_current_counter,
+    check_invoice_number_exists,
+    format_invoice_number,
+    set_custom_invoice_number,
+    force_invoice_number
+)
+from pdf_generator import generate_pdf
+from openai_helper import generate_smart_description
+from utils import save_file
+from image_converter import convert_pdf_to_jpg
+
+# Initialize session state variables
+if 'current_invoice_number' not in st.session_state:
+    st.session_state.current_invoice_number = None
+
+if 'document_generated' not in st.session_state:
+    st.session_state.document_generated = False
+
+if 'generated_data' not in st.session_state:
+    st.session_state.generated_data = {
+        'document_type': None,
+        'invoice_number': None,
+        'pdf_path': None,
+        'jpg_path': None,
+        'pdf_data': None,
+        'jpg_data': None,
+        'pdf_filename': None,
+        'jpg_filename': None,
+        'text_version': None,
+        'transaction_type': None,
+        'amount': 0.0
+    }
+    
+# Initialize counters for income and outcome
+if 'total_income' not in st.session_state:
+    st.session_state.total_income = 0.0
+    
+if 'total_outcome' not in st.session_state:
+    st.session_state.total_outcome = 0.0
+
+# Page configuration
+st.set_page_config(
+    page_title="Invoice & Receipt Generator",
+    page_icon="📝",
+    layout="wide"
+)
+
+# Application title
+st.title("🧾 Invoice & Receipt Generator")
+st.markdown("Generate professional invoices and receipts for your business transactions")
+
+# Add a bordered input for invoice number at top right (normal border)
+
+# Create a layout with the invoice number input on the right
+header_cols = st.columns([3, 1])
+
+with header_cols[1]:
+    # Initialize invoice number input state
+    if 'custom_invoice_number' not in st.session_state:
+        st.session_state.custom_invoice_number = ""
+    
+    # Store the display value from the previous session
+    if 'display_invoice_number' not in st.session_state:
+        display_value = ""
+    else:
+        display_value = st.session_state.display_invoice_number
+    
+    # Add an input for custom invoice number (just enter the number)
+    custom_invoice_number = st.text_input(
+        "Invoice Number", 
+        value=display_value,
+        key="custom_invoice_number_input",
+        placeholder="Enter number only (e.g. 20)",
+        help="Enter just the number (e.g. 20 will be formatted as INV020) or leave empty for automatic numbering"
+    )
+    
+    # Update the display value for next render
+    st.session_state.display_invoice_number = custom_invoice_number
+    
+    # No custom styling for the input field
+
+# Add Income and Outcome text fields below
+income_outcome_cols = st.columns(2)
+
+with income_outcome_cols[0]:
+    income_value = st.text_input("Total Income (£)", 
+                                value=f"{st.session_state.total_income:.2f}", 
+                                key="income_display",
+                                disabled=True)
+    
+with income_outcome_cols[1]:
+    outcome_value = st.text_input("Total Outcome (£)", 
+                                 value=f"{st.session_state.total_outcome:.2f}", 
+                                 key="outcome_display",
+                                 disabled=True)
+
+st.markdown("---")
+
+# Define company details
+COMPANY_NAME = "UPLOAD FOR SOFTWARE LTD"
+COMPANY_ADDRESS = "71-75 Shelton Street, Covent Garden, London, WC2H 9JQ, United Kingdom"
+COMPANY_EMAIL = "Support@uploadforsoftware.com"
+COMPANY_WEBSITE = "uploadforsoftware.com"
+COMPANY_NUMBER = "16009190"
+COMPANY_PHONE = ""  # Empty phone
+COMPANY_VAT = ""  # Empty VAT
+
+def main():
+    # On first run, reset the document_generated flag
+    if 'document_generated' not in st.session_state:
+        st.session_state.document_generated = False
+    
+    # Check if we need to regenerate a document with new description
+    if 'regenerating' in st.session_state and st.session_state.regenerating:
+        regenerate_document()
+        st.session_state.regenerating = False
+        
+    # Always show the form to create a document
+    show_document_form()
+    
+    # If a document was generated, show it below the form
+    if st.session_state.document_generated and st.session_state.generated_data['pdf_path'] is not None:
+        # Display the saved document and download options
+        display_generated_document()
+
+def regenerate_document():
+    """Regenerate a document with a new description but keeping the same invoice number"""
+    data = st.session_state.generated_data
+    
+    # Generate a new description
+    with st.spinner("Generating new smart description..."):
+        new_description = generate_smart_description()
+    
+    # Generate PDF with new description but same invoice number
+    try:
+        with st.spinner("Regenerating PDF document..."):
+            pdf_filename = generate_pdf(
+                document_type=data['document_type'],
+                transaction_type="Income",  # Default to Income
+                entity_name=data['pdf_filename'].split('_')[1].split('.')[0] if '_' in data['pdf_filename'] else "",
+                entity_type="Individual",  # Default to Individual
+                amount=100.00,  # Default amount
+                date=datetime.datetime.now().date(),
+                payment_method="Bank Transfer",  # Default payment method
+                description=new_description,
+                notes="",
+                invoice_number=data['invoice_number'],
+                company_name=COMPANY_NAME,
+                company_address=COMPANY_ADDRESS,
+                company_email=COMPANY_EMAIL,
+                company_phone=COMPANY_PHONE,
+                company_website=COMPANY_WEBSITE,
+                company_number=COMPANY_NUMBER,
+                company_vat=COMPANY_VAT
+            )
+            
+            # Save the PDF file
+            save_path = os.path.join("output", pdf_filename)
+            save_file(save_path, pdf_filename)
+            
+            # Convert to JPG
+            jpg_filename = convert_pdf_to_jpg(save_path, 
+                data['pdf_filename'].split('_')[1].split('.')[0] if '_' in data['pdf_filename'] else "")
+            
+            # Load PDF data
+            with open(save_path, "rb") as file:
+                pdf_data = file.read()
+            
+            # Load JPG data
+            jpg_data = None
+            if jpg_filename and os.path.exists(jpg_filename):
+                with open(jpg_filename, "rb") as file:
+                    jpg_data = file.read()
+            
+            # Generate new text version
+            text_version = generate_invoice_text(
+                transaction_type="Income",
+                entity_name=data['pdf_filename'].split('_')[1].split('.')[0] if '_' in data['pdf_filename'] else "",
+                amount=100.00,
+                date=datetime.datetime.now().date(),
+                description=new_description,
+                company_name=COMPANY_NAME
+            )
+            
+            # Update session state with new data
+            st.session_state.generated_data = {
+                'document_type': data['document_type'],
+                'invoice_number': data['invoice_number'],
+                'pdf_path': save_path,
+                'jpg_path': jpg_filename,
+                'pdf_data': pdf_data,
+                'jpg_data': jpg_data,
+                'pdf_filename': data['pdf_filename'],
+                'jpg_filename': os.path.basename(jpg_filename) if jpg_filename else None,
+                'text_version': text_version
+            }
+            
+            st.success(f"Document regenerated with new description!")
+            
+    except Exception as e:
+        st.error(f"An error occurred while regenerating the document: {str(e)}")
+
+def display_generated_document():
+    """Display the previously generated document and download options"""
+    data = st.session_state.generated_data
+    
+    st.success(f"Document generated successfully!")
+    
+    # Show document preview
+    st.subheader("Document Preview")
+    st.markdown(f"📄 Your {data['document_type'].lower()} has been generated with number **{data['invoice_number']}**")
+    
+    # Display the saved image
+    if data['jpg_path'] and os.path.exists(data['jpg_path']):
+        st.image(data['jpg_path'], caption=f"{data['document_type']} #{data['invoice_number']}", use_container_width=True)
+    
+    # Add Accept/Reject buttons
+    st.subheader("Accept or Reject Document")
+    accept_col, reject_col = st.columns(2)
+    
+    # Store the accept status in session state
+    if 'accept_clicked' not in st.session_state:
+        st.session_state.accept_clicked = False
+    
+    with accept_col:
+        if st.button("✅ ACCEPT", type="primary", use_container_width=True, key="accept_button"):
+            st.session_state.accept_clicked = True
+            
+            # Update Income/Outcome totals based on transaction type
+            transaction_type = data.get('transaction_type')
+            amount = float(data.get('amount', 0))
+            
+            # Update counters based on transaction type
+            if transaction_type == "Income":
+                st.session_state.total_income += amount
+            else:
+                st.session_state.total_outcome += amount
+            
+            # Update the invoice number field to show the next available number
+            # Get the current document type and increment for next time
+            document_type = data.get('document_type')
+            current_counter = get_current_counter(document_type)
+            next_number = current_counter + 1
+            next_formatted_number = format_invoice_number(next_number, document_type)
+            
+            # Set the next invoice number in the input field
+            st.session_state.custom_invoice_number = next_formatted_number
+                
+            st.success("Document accepted!")
+            st.rerun()
+    
+    with reject_col:
+        if st.button("❌ REJECT", type="secondary", use_container_width=True, key="reject_button"):
+            # Regenerate with new description but keep invoice number
+            st.session_state.regenerating = True
+            st.info("Regenerating document with a new description...")
+            # This will cause the page to refresh and the regenerate_document function will be called
+            st.rerun()
+            
+    # Show download options (only once)
+    show_download_options(data)
+
+def show_download_options(data):
+    """Show download options for PDF, JPG and text"""
+    # Show download options
+    st.subheader("Download Options")
+    download_cols = st.columns(2)
+    
+    with download_cols[0]:
+        # PDF download button with unique key
+        st.download_button(
+            label=f"Download {data['document_type']} as PDF",
+            data=data['pdf_data'],
+            file_name=data['pdf_filename'],
+            mime="application/pdf",
+            key=f"pdf_download_{data['invoice_number']}",
+        )
+    
+    with download_cols[1]:
+        # JPG download button with unique key
+        st.download_button(
+            label=f"Download {data['document_type']} as Image",
+            data=data['jpg_data'],
+            file_name=data['jpg_filename'],
+            mime="image/jpeg",
+            key=f"jpg_download_{data['invoice_number']}",
+        )
+    
+    # Text version for copying with unique key
+    st.subheader("Text Version (for WhatsApp/Email)")
+    st.text_area("Copy this text:", value=data['text_version'], height=100, key=f"text_area_{data['invoice_number']}")
+
+def show_document_form():
+    """Show the form to create a new document"""
+    # Create two columns for the form layout
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Transaction type
+        transaction_type = st.selectbox(
+            "Transaction Type",
+            options=["Income", "Expense"],
+            help="Select whether money is coming in or going out"
+        )
+        
+        # Entity name
+        entity_name = st.text_input("Person/Entity Name", help="Name of the person or entity involved in the transaction")
+        
+        # Amount
+        amount = st.number_input("Amount (£)", min_value=0.01, value=100.00, step=10.0, format="%.2f", help="Amount in GBP")
+        
+        # Entity type
+        entity_type = st.selectbox(
+            "Entity Type",
+            options=["Individual", "Company", "Platform"],
+            help="Select the type of entity"
+        )
+    
+    with col2:
+        # Date (get the current date more explicitly to avoid timezone issues)
+        current_date = datetime.datetime.now().date()
+        transaction_date = st.date_input("Transaction Date", value=current_date, help="Date of the transaction")
+        
+        # Payment method
+        payment_method = st.selectbox(
+            "Payment Method",
+            options=["Bank Transfer", "Visa", "PayPal", "Wise", "Other"],
+            help="Method of payment"
+        )
+        
+        # Document type
+        document_type = st.selectbox(
+            "Document Type",
+            options=["Invoice", "Receipt"],
+            help="Choose the type of document to generate"
+        )
+        
+        # Additional notes (optional)
+        notes = st.text_area("Additional Notes", help="Any additional information (optional)", height=100)
+    
+    # Generate button
+    if st.button("Generate Document", type="primary", use_container_width=True):
+        if not entity_name:
+            st.error("Please enter a name for the person or entity.")
+            return
+            
+        # Get description
+        with st.spinner("Generating smart project description..."):
+            description = generate_smart_description()
+            
+        # Store the entered number to use with Force Generate
+        if 'custom_input_number' not in st.session_state:
+            st.session_state.custom_input_number = None
+        
+        # Handle custom invoice number or get next number in sequence
+        if custom_invoice_number:
+            # Save the original input for future reference
+            st.session_state.custom_input_number = custom_invoice_number
+            
+            try:
+                # Check if it's a valid format like "INV001" or just "1"
+                if custom_invoice_number.isdigit():
+                    # It's just a number like "1", "2", etc.
+                    custom_number = int(custom_invoice_number)
+                    
+                    # Initialize force_generate flag if needed
+                    if 'force_generate' not in st.session_state:
+                        st.session_state.force_generate = False
+                    
+                    # Format the number for display in messages
+                    formatted_invoice_number = format_invoice_number(custom_number, document_type)
+                    
+                    # Check if this number already exists (and user hasn't clicked Force Generate)
+                    if check_invoice_number_exists(custom_number, document_type) and not st.session_state.force_generate:
+                        st.error(f"رقم الفاتورة {formatted_invoice_number} موجود بالفعل. الرجاء اختيار رقم آخر.")
+                        
+                        # Show a "Force Generate" button
+                        if st.button("⚠️ إنشاء بالرغم من ذلك", type="secondary", key="force_generate_btn"):
+                            # Set the flag to use this exact number on next click
+                            st.session_state.force_generate = True
+                            st.session_state.force_number = custom_number
+                            st.warning(f"اضغط على 'Generate Document' مرة أخرى لإنشاء الفاتورة برقم {formatted_invoice_number}")
+                            return
+                        else:
+                            return
+                    
+                    # If the user clicked Force Generate previously, use exactly that number
+                    if st.session_state.force_generate and hasattr(st.session_state, 'force_number'):
+                        # Use the exact number that was saved when Force Generate was clicked
+                        custom_number = st.session_state.force_number
+                        invoice_number = format_invoice_number(custom_number, document_type)
+                        st.warning(f"جاري إنشاء فاتورة برقم موجود مسبقًا: {invoice_number}")
+                        # Reset the force generate flag
+                        st.session_state.force_generate = False
+                    else:
+                        # Only set the counter if not forcing
+                        set_custom_invoice_number(custom_number, document_type)
+                    
+                    # Format the number with prefix (INV or REC)
+                    invoice_number = format_invoice_number(custom_number, document_type)
+                    # Show the formatted invoice number to the user
+                    st.success(f"استخدام رقم الفاتورة: {invoice_number}")
+                    
+                elif custom_invoice_number.startswith("INV") or custom_invoice_number.startswith("REC"):
+                    # It's a formatted number like "INV001"
+                    prefix = "INV" if document_type == "Invoice" else "REC"
+                    if not custom_invoice_number.startswith(prefix):
+                        st.error(f"Invalid prefix for {document_type}. Please use {prefix} prefix.")
+                        return
+                    
+                    # Extract the numeric part
+                    number_str = custom_invoice_number[3:]  # Remove the first 3 characters (INV or REC)
+                    if number_str.isdigit():
+                        custom_number = int(number_str)
+                        
+                        # Check if the user wants to force generate a document with an existing number
+                        if 'force_generate_fmt' not in st.session_state:
+                            st.session_state.force_generate_fmt = False
+                            
+                        # Check if this number already exists
+                        if check_invoice_number_exists(custom_number, document_type) and not st.session_state.force_generate_fmt:
+                            st.error(f"Invoice number {custom_invoice_number} already exists. Please choose a different number.")
+                            
+                            # Save the custom number and document type
+                            st.session_state.force_number = custom_number
+                            st.session_state.force_document_type = document_type
+                            
+                            # Show a "Force Generate" button
+                            if st.button("⚠️ Force Generate", type="secondary", key="force_generate_fmt_btn"):
+                                st.session_state.force_generate_fmt = True
+                                st.warning(f"Click 'Generate Document' again to create with number {custom_invoice_number}")
+                                return
+                            else:
+                                return
+                        
+                        # If the user clicked Force Generate previously, proceed with the existing number
+                        if st.session_state.force_generate_fmt:
+                            invoice_number = custom_invoice_number
+                            st.warning(f"Forcing generation with existing invoice number: {invoice_number}")
+                            # Reset the force generate flag
+                            st.session_state.force_generate_fmt = False
+                        
+                        # Set the custom invoice number in the counter
+                        set_custom_invoice_number(custom_number, document_type)
+                        invoice_number = custom_invoice_number
+                    else:
+                        st.error(f"Invalid number format. Please use a format like {prefix}001.")
+                        return
+                else:
+                    st.error(f"Invalid invoice number format. Please use either a number (e.g., 1) or a formatted number (e.g., INV001).")
+                    return
+            except ValueError:
+                st.error("Please enter a valid invoice number.")
+                return
+        else:
+            # Get the next invoice number in sequence
+            invoice_number = get_next_invoice_number(document_type)
+            
+        # Store the invoice number in session state
+        st.session_state.current_invoice_number = invoice_number
+        
+        # Generate text version
+        text_version = generate_invoice_text(
+            transaction_type=transaction_type,
+            entity_name=entity_name,
+            amount=amount,
+            date=transaction_date,
+            description=description,
+            company_name=COMPANY_NAME
+        )
+        
+        # Generate PDF
+        try:
+            with st.spinner("Generating PDF document..."):
+                pdf_filename = generate_pdf(
+                    document_type=document_type,
+                    transaction_type=transaction_type,
+                    entity_name=entity_name,
+                    entity_type=entity_type,
+                    amount=amount,
+                    date=transaction_date,
+                    payment_method=payment_method,
+                    description=description,
+                    notes=notes,
+                    invoice_number=invoice_number,
+                    company_name=COMPANY_NAME,
+                    company_address=COMPANY_ADDRESS,
+                    company_email=COMPANY_EMAIL,
+                    company_phone=COMPANY_PHONE,
+                    company_website=COMPANY_WEBSITE,
+                    company_number=COMPANY_NUMBER,
+                    company_vat=COMPANY_VAT
+                )
+                
+                # Create a directory for output files if it doesn't exist
+                os.makedirs("output", exist_ok=True)
+                
+                # Save the PDF file
+                save_path = os.path.join("output", pdf_filename)
+                save_file(save_path, pdf_filename)
+                
+                # Convert PDF to JPG with entity name
+                with st.spinner("Converting document to image format..."):
+                    jpg_filename = convert_pdf_to_jpg(save_path, entity_name)
+                
+                # Load PDF data for download
+                with open(save_path, "rb") as file:
+                    pdf_data = file.read()
+                
+                # Create download filename with invoice number and entity name
+                download_pdf_filename = pdf_filename
+                if entity_name:
+                    # Clean entity name for filename
+                    clean_name = ''.join(c if c.isalnum() or c in [' ', '_', '-'] else '_' for c in entity_name)
+                    clean_name = clean_name.replace(' ', '_')
+                    # Extract the original name without extension
+                    base_name = os.path.splitext(pdf_filename)[0]
+                    download_pdf_filename = f"{base_name}_{clean_name}.pdf"
+                
+                # Load JPG data
+                jpg_data = None
+                if jpg_filename and os.path.exists(jpg_filename):
+                    with open(jpg_filename, "rb") as file:
+                        jpg_data = file.read()
+                
+                # Save all data to session state
+                st.session_state.generated_data = {
+                    'document_type': document_type,
+                    'invoice_number': invoice_number,
+                    'pdf_path': save_path,
+                    'jpg_path': jpg_filename,
+                    'pdf_data': pdf_data,
+                    'jpg_data': jpg_data,
+                    'pdf_filename': download_pdf_filename,
+                    'jpg_filename': os.path.basename(jpg_filename) if jpg_filename else None,
+                    'text_version': text_version,
+                    'transaction_type': transaction_type,
+                    'amount': amount
+                }
+                
+                # Mark document as generated
+                st.session_state.document_generated = True
+                
+        except Exception as e:
+            st.error(f"An error occurred: {str(e)}")
+
+if __name__ == "__main__":
+    main()
