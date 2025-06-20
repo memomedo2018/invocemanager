@@ -100,7 +100,7 @@ with top_cols[0]:
 
 # Application title (in the wider second column)
 with top_cols[1]:
-    st.title("🧾 Invoice & Receipt Generator")
+    st.title("🧾 Invoice Receipt Generator")
     st.markdown("Generate professional invoices and receipts for your business transactions")
 
 # Display income and expense totals with warning if income exceeds 90,000
