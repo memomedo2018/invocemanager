@@ -54,18 +54,215 @@ if 'total_outcome' not in st.session_state:
 
 # Page configuration
 st.set_page_config(
-    page_title="Invoice & Receipt Generator",
-    page_icon="📝",
-    layout="wide"
+    page_title="Invoice Receipt Generator",
+    page_icon="📋",
+    layout="wide",
+    initial_sidebar_state="collapsed"
 )
 
-# Add a reset invoice number button in top-left corner with custom number option
-top_cols = st.columns([1, 9])
+# Custom CSS for beautiful UI
+st.markdown("""
+<style>
+    .main > div {
+        padding-top: 2rem;
+    }
+    
+    .stTitle {
+        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        font-size: 3rem !important;
+        font-weight: 700 !important;
+        text-align: center;
+        margin-bottom: 0.5rem !important;
+    }
+    
+    .subtitle {
+        text-align: center;
+        color: #666;
+        font-size: 1.2rem;
+        margin-bottom: 2rem;
+        font-style: italic;
+    }
+    
+    .metric-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 1.5rem;
+        border-radius: 15px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+        text-align: center;
+        color: white;
+        margin-bottom: 1rem;
+    }
+    
+    .income-card {
+        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        padding: 1.5rem;
+        border-radius: 15px;
+        box-shadow: 0 8px 32px rgba(79, 172, 254, 0.3);
+        text-align: center;
+        color: white;
+        margin-bottom: 1rem;
+    }
+    
+    .expense-card {
+        background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+        padding: 1.5rem;
+        border-radius: 15px;
+        box-shadow: 0 8px 32px rgba(250, 112, 154, 0.3);
+        text-align: center;
+        color: white;
+        margin-bottom: 1rem;
+    }
+    
+    .warning-card {
+        background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+        padding: 1.5rem;
+        border-radius: 15px;
+        box-shadow: 0 8px 32px rgba(255, 107, 107, 0.3);
+        text-align: center;
+        color: white;
+        margin-bottom: 1rem;
+        animation: pulse 2s infinite;
+    }
+    
+    @keyframes pulse {
+        0% { transform: scale(1); }
+        50% { transform: scale(1.02); }
+        100% { transform: scale(1); }
+    }
+    
+    .reset-section {
+        background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+        padding: 1.5rem;
+        border-radius: 15px;
+        box-shadow: 0 8px 32px rgba(168, 237, 234, 0.3);
+        margin-bottom: 2rem;
+    }
+    
+    .form-container {
+        background: white;
+        padding: 2rem;
+        border-radius: 20px;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+        margin: 1rem 0;
+    }
+    
+    .stSelectbox > div > div {
+        border-radius: 10px;
+    }
+    
+    .stNumberInput > div > div {
+        border-radius: 10px;
+    }
+    
+    .stTextInput > div > div {
+        border-radius: 10px;
+    }
+    
+    .stTextArea > div > div {
+        border-radius: 10px;
+    }
+    
+    .stDateInput > div > div {
+        border-radius: 10px;
+    }
+    
+    div[data-testid="metric-container"] {
+        background: white;
+        border: 1px solid #e0e0e0;
+        padding: 1rem;
+        border-radius: 15px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+    }
+    
+    .stButton > button {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border: none;
+        border-radius: 25px;
+        color: white;
+        font-weight: 600;
+        padding: 0.5rem 2rem;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+    }
+    
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 25px rgba(102, 126, 234, 0.4);
+    }
+    
+    .separator {
+        margin: 2rem 0;
+        border: none;
+        height: 2px;
+        background: linear-gradient(90deg, transparent, #667eea, transparent);
+    }
+    
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 2rem;
+        background: transparent;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 25px;
+        padding: 0.5rem 2rem;
+        font-weight: 600;
+        border: none;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        transition: all 0.3s ease;
+    }
+    
+    .stTabs [data-baseweb="tab"]:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 25px rgba(102, 126, 234, 0.4);
+    }
+    
+    .stTabs [aria-selected="true"] {
+        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%) !important;
+    }
+    
+    .stSelectbox label, .stNumberInput label, .stTextInput label, .stTextArea label, .stDateInput label {
+        font-weight: 600;
+        color: #333;
+        font-size: 1rem;
+    }
+    
+    .upload-section {
+        background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+        padding: 1.5rem;
+        border-radius: 15px;
+        margin: 1rem 0;
+        box-shadow: 0 8px 32px rgba(252, 182, 159, 0.3);
+    }
+    
+    .success-message {
+        background: linear-gradient(135deg, #a8e6cf 0%, #88d8a3 100%);
+        padding: 1rem;
+        border-radius: 10px;
+        color: #2d5a3d;
+        font-weight: 600;
+        margin: 1rem 0;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-with top_cols[0]:
-    # Add a number input field for the custom reset value
+# Beautiful header section
+st.markdown('<div style="text-align: center; margin-bottom: 3rem;">', unsafe_allow_html=True)
+st.title("📋 Invoice Receipt Generator")
+st.markdown('<p class="subtitle">Generate professional invoices and receipts for your business transactions</p>', unsafe_allow_html=True)
+st.markdown('</div>', unsafe_allow_html=True)
+
+# Reset section with beautiful design
+st.markdown('<div class="reset-section">', unsafe_allow_html=True)
+reset_cols = st.columns([2, 1, 2])
+with reset_cols[1]:
+    st.markdown("### 🔄 ضبط الترقيم")
     reset_to_number = st.number_input(
-        "ضبط الترقيم من",
+        "البدء من الرقم",
         min_value=1,
         value=1,
         step=1,
@@ -73,48 +270,58 @@ with top_cols[0]:
         help="الرقم الذي تريد أن تبدأ منه ترقيم الفواتير"
     )
     
-    # Add the reset button
-    if st.button("🔄 ضبط الترقيم", key="reset_invoice_btn", type="primary"):
-        # Reset invoice counter to the specified number - 1 (as it will be incremented on next use)
+    if st.button("ضبط الترقيم", key="reset_invoice_btn", type="primary"):
         import json
         import os
         
-        # Path to the counter file
         counter_file = "data/invoice_counter.json"
-        
-        # Create data directory if it doesn't exist
         os.makedirs(os.path.dirname(counter_file), exist_ok=True)
         
-        # Set counter to (reset_to_number - 1) so that next invoice will be reset_to_number
         counters = {
             "Invoice": reset_to_number - 1,
             "Receipt": reset_to_number - 1
         }
         
-        # Save the reset counter
         with open(counter_file, 'w') as f:
             json.dump(counters, f)
             
         st.success(f"تم إعادة ضبط ترقيم الفواتير للبدء من الرقم {reset_to_number}!")
         st.rerun()
+st.markdown('</div>', unsafe_allow_html=True)
 
-# Application title (in the wider second column)
-with top_cols[1]:
-    st.title("🧾 Invoice Receipt Generator")
-    st.markdown("Generate professional invoices and receipts for your business transactions")
-
-# Display income and expense totals with warning if income exceeds 90,000
+# Beautiful metrics cards
+st.markdown("### 📊 الملخص المالي")
 income_expense_cols = st.columns(2)
 
 with income_expense_cols[0]:
-    # Show warning if total income exceeds 90,000
     if st.session_state.total_income >= 90000:
-        st.error(f"⚠️ Total Income: £{st.session_state.total_income:.2f} - VAT Registration Required!")
+        st.markdown(f'''
+        <div class="warning-card">
+            <h3>⚠️ إجمالي الدخل</h3>
+            <h2>£{st.session_state.total_income:.2f}</h2>
+            <p>مطلوب تسجيل ضريبة القيمة المضافة!</p>
+        </div>
+        ''', unsafe_allow_html=True)
     else:
-        st.info(f"Total Income: £{st.session_state.total_income:.2f}")
+        st.markdown(f'''
+        <div class="income-card">
+            <h3>💰 إجمالي الدخل</h3>
+            <h2>£{st.session_state.total_income:.2f}</h2>
+            <p>الدخل الإجمالي المسجل</p>
+        </div>
+        ''', unsafe_allow_html=True)
 
 with income_expense_cols[1]:
-    st.info(f"Total Expenses: £{st.session_state.total_outcome:.2f}")
+    st.markdown(f'''
+    <div class="expense-card">
+        <h3>💸 إجمالي المصروفات</h3>
+        <h2>£{st.session_state.total_outcome:.2f}</h2>
+        <p>المصروفات الإجمالية المسجلة</p>
+    </div>
+    ''', unsafe_allow_html=True)
+
+# Beautiful separator
+st.markdown('<hr class="separator">', unsafe_allow_html=True)
 
 # Create a layout with the invoice number input on the right
 header_cols = st.columns([3, 1])
@@ -286,6 +493,10 @@ def show_download_options(data):
 
 def show_document_form():
     """Show the form to create a new document"""
+    # Beautiful form container
+    st.markdown('<div class="form-container">', unsafe_allow_html=True)
+    st.markdown("### 📝 إنشاء مستند جديد")
+    
     # Define company details
     COMPANY_NAME = "UPLOAD FOR SOFTWARE LTD"
     COMPANY_ADDRESS = "71-75 Shelton Street, Covent Garden, London, WC2H 9JQ, United Kingdom"
@@ -535,20 +746,29 @@ def show_document_form():
         except Exception as e:
             st.error(f"Error generating document: {e}")
             return
+    
+    # Close the form container
+    st.markdown('</div>', unsafe_allow_html=True)
 
-# Main app layout - always show the document form
-tab1, tab2 = st.tabs(["Create Document", "Document Preview"])
+# Beautiful separator before tabs
+st.markdown('<hr class="separator">', unsafe_allow_html=True)
+
+# Main app layout with beautiful tabs
+tab1, tab2 = st.tabs(["📝 إنشاء مستند", "📄 معاينة المستند"])
 
 with tab1:
-    # Show the form to create a new document
     show_document_form()
     
 with tab2:
-    # Show the generated document preview if available
     if st.session_state.document_generated:
         display_generated_document()
     else:
-        st.info("No document has been generated yet. Create a document in the 'Create Document' tab.")
+        st.markdown('''
+        <div class="form-container" style="text-align: center;">
+            <h3>📄 لا يوجد مستند للمعاينة</h3>
+            <p>قم بإنشاء مستند جديد في تبويب "إنشاء مستند" أولاً</p>
+        </div>
+        ''', unsafe_allow_html=True)
 
 def main():
     pass
